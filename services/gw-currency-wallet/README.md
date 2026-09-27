@@ -74,6 +74,10 @@ explicit environment variables override file values.
 | `HTTP_PORT` | API listening port, without a colon | `8080` |
 | `HTTP_OUT_PORT` | Published API port on the host | `8080` |
 | `JWT_SECRET_KEY` | Required HS256 signing secret, at least 32 bytes | Your own random secret |
+| `EXCHANGER_GRPC_DOCKER_ADDR` | Exchanger address when running without `-c` | `exchanger:50051` |
+| `EXCHANGER_GRPC_LOCALHOST_ADDR` | Exchanger address when loading configuration with `-c` | `localhost:50051` |
+| `EXCHANGER_TIMEOUT` | Required positive integer timeout for each gRPC request, in seconds | `5` |
+| `EXCHANGE_RATES_CACHE_TTL` | Required positive integer lifetime of the in-memory rates cache in seconds | `30` |
 | `JWT_TTL` | Required positive integer lifetime in hours | `24` |
 | `LOG_LEVEL_WALLET` | Optional JSON log level: DEBUG, INFO, WARN, ERROR | `INFO` |
 | `MAX_DB_CONNECTIONS` | Maximum connections in the API database pool | `4` |
@@ -94,7 +98,10 @@ Timeouts must be positive and fit in a Go duration when converted from seconds
 (at most 9223372036 seconds). These are validation limits, not recommended tuning values.
 `JWT_TTL` accepts integer hours from 1 to 2562047; values such as `24h` or `1.5`
 are rejected. Its conversion to a duration is checked for overflow.
+The same positive-seconds duration limits apply to `EXCHANGER_TIMEOUT` and
+`EXCHANGE_RATES_CACHE_TTL`. Both exchanger address variables are required.
 Invalid pool or timeout settings cause startup to fail with the variable name in the error.
+When updating an existing `config.env`, add missing settings from `example_config.env`.
 
 To compare pool sizes, change `MAX_DB_CONNECTIONS` in `config.env`, keeping
 `MIN_DB_CONNECTIONS` no greater than the maximum, and recreate the API container:
@@ -112,7 +119,7 @@ it does not set a database query timeout.
 
 ## Authentication
 
-`POST /api/v1/register` and `POST /api/v1/login` are public. All three wallet
+`POST /api/v1/register` and `POST /api/v1/login` are public. Wallet and exchange-rate
 routes below require `Authorization: Bearer <token>`. Missing, invalid or expired
 tokens receive `401 Unauthorized` with an empty body.
 
@@ -166,13 +173,41 @@ then passes a nonzero UUID user ID through the request context.
 |---|---|---|
 | POST | `/api/v1/register` | Create a user and three zero balances |
 | POST | `/api/v1/login` | Receive a JWT |
+| GET | `/api/v1/exchange/rates` | Read cached exchange rates relative to USD |
 | GET | `/api/v1/balance` | Read the authenticated user's balances |
 | POST | `/api/v1/wallet/deposit` | Deposit into one currency balance |
 | POST | `/api/v1/wallet/withdraw` | Withdraw from one currency balance |
 
-The last three routes require `Authorization: Bearer <token>`.
+The last four routes require `Authorization: Bearer <token>`.
 The old `/api/v1/wallets`, `/api/v1/wallets/{wallet_uuid}` and
 `/api/v1/wallet` routes have been removed. There is no separate create-wallet endpoint.
+
+### Exchange rates
+
+```bash
+curl -i http://localhost:8080/api/v1/exchange/rates \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Success: `200 OK`; with the seeded exchanger database:
+
+```json
+{"rates":{"USD":1,"RUB":90.1,"EUR":0.87}}
+```
+
+Rates represent currency units per 1 USD. This endpoint only reads rates;
+it does not convert money or change balances.
+
+Each wallet process caches successful responses for `EXCHANGE_RATES_CACHE_TTL`
+seconds, starting when the upstream response is received. A fresh cache can serve
+requests while exchanger is unavailable. After expiry, the next request refreshes
+rates over gRPC with `EXCHANGER_TIMEOUT`; concurrent requests share the cache
+and serialize refresh attempts. There is no background refresh.
+
+If the cache is empty or expired and exchanger fails, the endpoint returns
+`500` with `{"error":"Failed to retrieve exchange rates"}`. Expired rates are
+not returned, and errors do not extend the cache lifetime; the next request
+tries again. Restarting wallet clears its cache.
 
 ### Money and currencies
 
@@ -329,6 +364,8 @@ These tests do not use `config.env` or the development database.
 
 Coverage includes registration/login, bcrypt, JWT validation, authentication middleware,
 configuration, domain validation, exact decimal conversion and HTTP error responses.
+Exchange-rate tests cover client validation, RPC deadlines, handler responses,
+cache expiry and refresh failure, concurrent cache misses and cancellation.
 Repository tests cover registration rollback, user/currency isolation, balance limits,
 concurrent deposits and withdrawals, and prevention of overdrafts and overflow.
 

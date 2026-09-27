@@ -24,12 +24,12 @@ import (
 	"wallet-app/internal/features/wallet/service"
 	wallet_http "wallet-app/internal/features/wallet/transport/http"
 
+	exchange_cache "wallet-app/internal/features/exchange/cache"
 	exchange_client "wallet-app/internal/features/exchange/client"
 	exchange_service "wallet-app/internal/features/exchange/service"
+	exchange_http "wallet-app/internal/features/exchange/transport/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 func Run() error {
@@ -81,18 +81,7 @@ func RunWithConfig(config config.Config, logger *slog.Logger) error {
 	}
 
 	grpcRequestTimeout := time.Second * time.Duration(config.Exchanger.ExchangerRequestTimeout)
-	svcConfig := fmt.Sprintf(`{
-		"methodConfig": [{
-			"name": [{"service": "", "method": ""}],
-			"timeout": "%.0fs"
-		}]
-	}`, grpcRequestTimeout)
-
-	exchangerConnection, err := grpc.NewClient(
-		config.Exchanger.ExchangerGrpcAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultServiceConfig(svcConfig),
-	)
+	exchangerConnection, err := newExchangerConnection(config.Exchanger.ExchangerGrpcAddr, grpcRequestTimeout)
 	if err != nil {
 		return fmt.Errorf("exchanger connection: %w", err)
 	}
@@ -103,16 +92,22 @@ func RunWithConfig(config config.Config, logger *slog.Logger) error {
 	walletRepository := repository.NewPostgresRepository(pool)
 	authRepository := auth_repository.NewPostgresRepository(pool)
 
+	ratesCache := exchange_cache.NewMemory(
+		exchangerClient,
+		time.Duration(config.ExchangeRatesCacheTTL)*time.Second,
+	)
+
 	walletService := service.New(walletRepository)
 	authService := auth_service.New(authRepository, id.GenerateUUID, hasher, tokenGenerator)
-	exchangeService := exchange_service.New(exchangerClient)
-	_ = exchangeService
+	exchangeService := exchange_service.New(ratesCache)
 
+	exchangeHandler := exchange_http.New(exchangeService)
 	walletHandler := wallet_http.New(walletService)
 	authHandler := auth_http.New(authService)
 
 	mux := http.NewServeMux()
 
+	mux.Handle("GET /api/v1/exchange/rates", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(exchangeHandler.GetExchangeRates)))
 	mux.HandleFunc("POST /api/v1/register", authHandler.Register)
 	mux.HandleFunc("POST /api/v1/login", authHandler.Login)
 	mux.Handle("GET /api/v1/balance", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(walletHandler.GetBalances)))

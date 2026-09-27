@@ -9,8 +9,9 @@ Wallet supports registration, login with JWT, and per-user USD/RUB/EUR balances.
 Registration creates all three zero balances in the same database transaction as
 the user. Authenticated users can read, deposit into and withdraw from their own
 balances. Money is stored as integer minor units; the REST API uses decimal amounts.
-Connecting wallet to exchanger, currency exchange, Kafka, notifications and
-analytics are still planned.
+Wallet retrieves exchange rates from exchanger over gRPC and exposes them through
+an authenticated REST endpoint with an in-memory TTL cache. Currency exchange,
+Kafka, notifications and analytics are still planned.
 
 ## Structure
 
@@ -43,6 +44,8 @@ Set `JWT_SECRET_KEY` to your own random secret of at least 32 bytes; for example
 use the output of `openssl rand -hex 32`. The example key is a placeholder.
 `JWT_TTL` is a positive integer number of hours (default example: `24`).
 Keep the secret in the ignored `config.env`. Wallet startup rejects invalid settings.
+When updating an existing configuration, add `EXCHANGE_RATES_CACHE_TTL=30`
+(seconds) and the exchanger address/timeout settings from `example_config.env`.
 See the [wallet API instructions](services/gw-currency-wallet/README.md#authentication)
 to register, log in and call protected endpoints.
 
@@ -133,6 +136,8 @@ and migration rollback/reapplication. Each test uses its own schema.
 
 Wallet tests cover authentication, exact decimal amounts, per-user balances,
 registration rollback, concurrent deposits/withdrawals and overflow protection.
+Exchange-rate tests cover the gRPC client, RPC deadlines, HTTP responses, cache
+expiry, refresh failures, concurrent cache misses and canceled contexts.
 
 Wallet load-test targets are `load-test-add-balance`, `load-test-minus-balance`
 and `load-test-get-balance`. They require Vegeta and run for 30 seconds.

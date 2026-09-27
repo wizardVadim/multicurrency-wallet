@@ -12,17 +12,18 @@ import (
 )
 
 type Config struct {
-	LogLevel          slog.Level
-	HTTPPort          string
-	DB                DBConfig
-	MaxDbConnections  int
-	MinDbConnections  int
-	ReadHeaderTimeout int
-	ReadTimeout       int
-	WriteTimeout      int
-	IdleTimeout       int
-	Authorization     AuthConfig
-	Exchanger         ExchangerConfig
+	ExchangeRatesCacheTTL int // Seconds.
+	LogLevel              slog.Level
+	HTTPPort              string
+	DB                    DBConfig
+	MaxDbConnections      int
+	MinDbConnections      int
+	ReadHeaderTimeout     int
+	ReadTimeout           int
+	WriteTimeout          int
+	IdleTimeout           int
+	Authorization         AuthConfig
+	Exchanger             ExchangerConfig
 }
 
 type DBConfig struct {
@@ -78,6 +79,7 @@ func load(getenv func(string) string, isLocalhost bool) (Config, error) {
 		"EXCHANGER_GRPC_DOCKER_ADDR",
 		"EXCHANGER_GRPC_LOCALHOST_ADDR",
 		"EXCHANGER_TIMEOUT",
+		"EXCHANGE_RATES_CACHE_TTL",
 	}
 
 	for _, key := range required {
@@ -121,6 +123,11 @@ func load(getenv func(string) string, isLocalhost bool) (Config, error) {
 		return Config{}, fmt.Errorf("EXCHANGER_TIMEOUT: cannot convert variable: %w", err)
 	}
 
+	ratesCacheTTL, err := strconv.Atoi(getenv("EXCHANGE_RATES_CACHE_TTL"))
+	if err != nil {
+		return Config{}, fmt.Errorf("EXCHANGE_RATES_CACHE_TTL: cannot convert variable: %w", err)
+	}
+
 	var exchangerGrpcAddr string
 	if isLocalhost {
 		exchangerGrpcAddr = getenv("EXCHANGER_GRPC_LOCALHOST_ADDR")
@@ -129,13 +136,14 @@ func load(getenv func(string) string, isLocalhost bool) (Config, error) {
 	}
 
 	config := Config{
-		HTTPPort:          getenv("HTTP_PORT"),
-		MaxDbConnections:  maxDbConnections,
-		MinDbConnections:  minDbConnections,
-		ReadHeaderTimeout: readHeaderTimeout,
-		ReadTimeout:       readTimeout,
-		WriteTimeout:      writeTimeout,
-		IdleTimeout:       idleTimeout,
+		ExchangeRatesCacheTTL: ratesCacheTTL,
+		HTTPPort:              getenv("HTTP_PORT"),
+		MaxDbConnections:      maxDbConnections,
+		MinDbConnections:      minDbConnections,
+		ReadHeaderTimeout:     readHeaderTimeout,
+		ReadTimeout:           readTimeout,
+		WriteTimeout:          writeTimeout,
+		IdleTimeout:           idleTimeout,
 		DB: DBConfig{
 			Host:     getenv("POSTGRES_HOST"),
 			Port:     getenv("POSTGRES_PORT"),
@@ -167,6 +175,9 @@ func load(getenv func(string) string, isLocalhost bool) (Config, error) {
 }
 
 func (config Config) validate() error {
+	if config.ExchangeRatesCacheTTL < 1 || int64(config.ExchangeRatesCacheTTL) > math.MaxInt64/int64(time.Second) {
+		return fmt.Errorf("EXCHANGE_RATES_CACHE_TTL error: %v", errInvalidSettingValue)
+	}
 	if config.MaxDbConnections < 1 || config.MaxDbConnections > math.MaxInt32 {
 		return fmt.Errorf("MAX_DB_CONNECTIONS error: %v", errInvalidSettingValue)
 	}
@@ -187,6 +198,9 @@ func (config Config) validate() error {
 	}
 	if config.Authorization.JwtTTL < 1 || int64(config.Authorization.JwtTTL) > math.MaxInt64/int64(time.Hour) {
 		return fmt.Errorf("JWT_TTL error: %v", errInvalidSettingValue)
+	}
+	if config.Exchanger.ExchangerRequestTimeout < 1 || int64(config.Exchanger.ExchangerRequestTimeout) > math.MaxInt64/int64(time.Second) {
+		return fmt.Errorf("EXCHANGER_TIMEOUT error: %v", errInvalidSettingValue)
 	}
 	return nil
 }

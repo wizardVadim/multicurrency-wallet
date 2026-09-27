@@ -15,21 +15,25 @@ import (
 func setValidEnv(t *testing.T) {
 	t.Helper()
 	for key, value := range map[string]string{
-		"LOG_LEVEL_WALLET":    "INFO",
-		"JWT_SECRET_KEY":      "0123456789abcdef0123456789abcdef",
-		"JWT_TTL":             "24",
-		"HTTP_PORT":           "8080",
-		"MAX_DB_CONNECTIONS":  "1",
-		"MIN_DB_CONNECTIONS":  "1",
-		"READ_HEADER_TIMEOUT": "5",
-		"READ_TIMEOUT":        "5",
-		"WRITE_TIMEOUT":       "20",
-		"IDLE_TIMEOUT":        "120",
-		"POSTGRES_HOST":       "localhost",
-		"POSTGRES_PORT":       "5432",
-		"POSTGRES_USER":       "test_user",
-		"POSTGRES_PASSWORD":   "test_password",
-		"POSTGRES_NAME":       "wallet_test",
+		"EXCHANGE_RATES_CACHE_TTL":      "30",
+		"LOG_LEVEL_WALLET":              "INFO",
+		"EXCHANGER_GRPC_DOCKER_ADDR":    "exchanger:50051",
+		"EXCHANGER_GRPC_LOCALHOST_ADDR": "localhost:50051",
+		"EXCHANGER_TIMEOUT":             "5",
+		"JWT_SECRET_KEY":                "0123456789abcdef0123456789abcdef",
+		"JWT_TTL":                       "24",
+		"HTTP_PORT":                     "8080",
+		"MAX_DB_CONNECTIONS":            "1",
+		"MIN_DB_CONNECTIONS":            "1",
+		"READ_HEADER_TIMEOUT":           "5",
+		"READ_TIMEOUT":                  "5",
+		"WRITE_TIMEOUT":                 "20",
+		"IDLE_TIMEOUT":                  "120",
+		"POSTGRES_HOST":                 "localhost",
+		"POSTGRES_PORT":                 "5432",
+		"POSTGRES_USER":                 "test_user",
+		"POSTGRES_PASSWORD":             "test_password",
+		"POSTGRES_NAME":                 "wallet_test",
 	} {
 		t.Setenv(key, value)
 	}
@@ -43,14 +47,16 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	want := config.Config{
-		Authorization:     config.AuthConfig{JwtSecretKey: "0123456789abcdef0123456789abcdef", JwtTTL: 24},
-		HTTPPort:          "8080",
-		MaxDbConnections:  1,
-		MinDbConnections:  1,
-		ReadHeaderTimeout: 5,
-		ReadTimeout:       5,
-		WriteTimeout:      20,
-		IdleTimeout:       120,
+		ExchangeRatesCacheTTL: 30,
+		Exchanger:             config.ExchangerConfig{ExchangerGrpcAddr: "exchanger:50051", ExchangerRequestTimeout: 5},
+		Authorization:         config.AuthConfig{JwtSecretKey: "0123456789abcdef0123456789abcdef", JwtTTL: 24},
+		HTTPPort:              "8080",
+		MaxDbConnections:      1,
+		MinDbConnections:      1,
+		ReadHeaderTimeout:     5,
+		ReadTimeout:           5,
+		WriteTimeout:          20,
+		IdleTimeout:           120,
 		DB: config.DBConfig{
 			Host:     "localhost",
 			Port:     "5432",
@@ -67,6 +73,7 @@ func TestLoad(t *testing.T) {
 func TestLoadRequiredEnv(t *testing.T) {
 	keys := []string{
 		"JWT_SECRET_KEY", "JWT_TTL", "HTTP_PORT",
+		"EXCHANGER_GRPC_DOCKER_ADDR", "EXCHANGER_GRPC_LOCALHOST_ADDR", "EXCHANGER_TIMEOUT", "EXCHANGE_RATES_CACHE_TTL",
 		"MAX_DB_CONNECTIONS",
 		"MIN_DB_CONNECTIONS",
 		"READ_HEADER_TIMEOUT",
@@ -113,7 +120,7 @@ func TestLoadInvalidNumericSettings(t *testing.T) {
 		{"MIN_DB_CONNECTIONS", "-1"},
 		{"MIN_DB_CONNECTIONS", "2"},
 	}
-	keys := []string{"MAX_DB_CONNECTIONS", "MIN_DB_CONNECTIONS", "READ_HEADER_TIMEOUT", "READ_TIMEOUT", "WRITE_TIMEOUT", "IDLE_TIMEOUT"}
+	keys := []string{"MAX_DB_CONNECTIONS", "MIN_DB_CONNECTIONS", "READ_HEADER_TIMEOUT", "READ_TIMEOUT", "WRITE_TIMEOUT", "IDLE_TIMEOUT", "EXCHANGER_TIMEOUT", "EXCHANGE_RATES_CACHE_TTL"}
 	for _, key := range keys {
 		for _, value := range []string{"abc", "1.5", "999999999999999999999999999"} {
 			tests = append(tests, struct{ key, value string }{key, value})
@@ -147,8 +154,8 @@ func TestLoadNumericBoundaries(t *testing.T) {
 		{"zero minimum", map[string]string{"MIN_DB_CONNECTIONS": "0"}},
 		{"equal pool limits", map[string]string{"MAX_DB_CONNECTIONS": "4", "MIN_DB_CONNECTIONS": "4"}},
 		{"maximum pool size", map[string]string{"MAX_DB_CONNECTIONS": "2147483647", "MIN_DB_CONNECTIONS": "2147483647"}},
-		{"minimum timeouts", map[string]string{"READ_HEADER_TIMEOUT": "1", "READ_TIMEOUT": "1", "WRITE_TIMEOUT": "1", "IDLE_TIMEOUT": "1"}},
-		{"maximum timeouts", map[string]string{"READ_HEADER_TIMEOUT": "9223372036", "READ_TIMEOUT": "9223372036", "WRITE_TIMEOUT": "9223372036", "IDLE_TIMEOUT": "9223372036"}},
+		{"minimum timeouts", map[string]string{"READ_HEADER_TIMEOUT": "1", "READ_TIMEOUT": "1", "WRITE_TIMEOUT": "1", "IDLE_TIMEOUT": "1", "EXCHANGER_TIMEOUT": "1", "EXCHANGE_RATES_CACHE_TTL": "1"}},
+		{"maximum timeouts", map[string]string{"READ_HEADER_TIMEOUT": "9223372036", "READ_TIMEOUT": "9223372036", "WRITE_TIMEOUT": "9223372036", "IDLE_TIMEOUT": "9223372036", "EXCHANGER_TIMEOUT": "9223372036", "EXCHANGE_RATES_CACHE_TTL": "9223372036"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			setValidEnv(t)
@@ -160,9 +167,11 @@ func TestLoadNumericBoundaries(t *testing.T) {
 				t.Fatalf("Load(): %v", err)
 			}
 			actual := map[string]int{
-				"MAX_DB_CONNECTIONS": got.MaxDbConnections, "MIN_DB_CONNECTIONS": got.MinDbConnections,
+				"EXCHANGE_RATES_CACHE_TTL": got.ExchangeRatesCacheTTL,
+				"MAX_DB_CONNECTIONS":       got.MaxDbConnections, "MIN_DB_CONNECTIONS": got.MinDbConnections,
 				"READ_HEADER_TIMEOUT": got.ReadHeaderTimeout, "READ_TIMEOUT": got.ReadTimeout,
 				"WRITE_TIMEOUT": got.WriteTimeout, "IDLE_TIMEOUT": got.IdleTimeout,
+				"EXCHANGER_TIMEOUT": got.Exchanger.ExchangerRequestTimeout,
 			}
 			for key, value := range tt.values {
 				if strconv.Itoa(actual[key]) != value {
