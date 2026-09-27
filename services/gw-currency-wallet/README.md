@@ -2,7 +2,9 @@
 
 A wallet REST API built with Go and PostgreSQL. Deposits and withdrawals use
 atomic SQL updates, with balance checks in the same statement to prevent lost
-updates, negative balances, and integer overflow under concurrent requests.
+updates, negative balances, and integer overflow under concurrent requests. Currency
+exchange locks both balances in a fixed order and applies debit and credit in
+one transaction.
 
 Unless stated otherwise, run commands from the repository root (two levels above this directory).
 See the [repository README](../../README.md) for the workspace layout.
@@ -119,7 +121,7 @@ it does not set a database query timeout.
 
 ## Authentication
 
-`POST /api/v1/register` and `POST /api/v1/login` are public. Wallet and exchange-rate
+`POST /api/v1/register` and `POST /api/v1/login` are public. Wallet, exchange-rate and currency-exchange
 routes below require `Authorization: Bearer <token>`. Missing, invalid or expired
 tokens receive `401 Unauthorized` with an empty body.
 
@@ -174,11 +176,12 @@ then passes a nonzero UUID user ID through the request context.
 | POST | `/api/v1/register` | Create a user and three zero balances |
 | POST | `/api/v1/login` | Receive a JWT |
 | GET | `/api/v1/exchange/rates` | Read cached exchange rates relative to USD |
+| POST | `/api/v1/exchange` | Exchange between two currency balances atomically |
 | GET | `/api/v1/balance` | Read the authenticated user's balances |
 | POST | `/api/v1/wallet/deposit` | Deposit into one currency balance |
 | POST | `/api/v1/wallet/withdraw` | Withdraw from one currency balance |
 
-The last four routes require `Authorization: Bearer <token>`.
+All routes except registration and login require `Authorization: Bearer <token>`.
 The old `/api/v1/wallets`, `/api/v1/wallets/{wallet_uuid}` and
 `/api/v1/wallet` routes have been removed. There is no separate create-wallet endpoint.
 
@@ -239,7 +242,7 @@ Currency key order is not significant.
 
 ### Deposit
 
-Both operation endpoints accept one JSON object, with a 4096-byte body limit.
+Deposit and withdrawal endpoints accept one JSON object, with a 4096-byte body limit.
 
 ```bash
 curl -i -X POST http://localhost:8080/api/v1/wallet/deposit \
@@ -269,15 +272,72 @@ After the deposit above, success is `200 OK`:
 {"message":"Withdrawal successful","new_balance":{"USD":74.50,"EUR":0.00,"RUB":0.00}}
 ```
 
-Withdrawing the entire balance is allowed. Each accepted POST is a separate
+Withdrawing the entire balance is allowed. Each accepted deposit or withdrawal POST is a separate
 operation; there is no idempotency key, so retries can apply it again.
-The SQL update is atomic. Reading `new_balance` is a separate query: its result
+For deposit and withdrawal, the SQL update is atomic. Reading `new_balance` is a separate query: its result
 can include concurrent operations, and a read failure can return 500 after the
 update has succeeded.
 
+### Exchange currencies
+
+`POST /api/v1/exchange` requires a JWT and one JSON object, limited to 4096 bytes.
+Amounts are JSON numbers in major units; both currencies must be supported and
+different. The debit must be positive and have at most two decimal places.
+
+For a user with 100.00 USD and 0.00 EUR, using the seeded EUR rate of 0.87:
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/exchange \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"from_currency":"USD","to_currency":"EUR","amount":100.00}'
+```
+
+Success: `200 OK`:
+
+```json
+{"message":"Exchange successful","exchanged_amount":87.00,"new_balance":{"USD":0.00,"EUR":87.00}}
+```
+
+`exchanged_amount` is the credited amount in the target currency. `new_balance`
+contains only the two affected currencies and their balances from this transaction.
+Other balances are unchanged. The result is returned after a successful commit;
+concurrent later operations may change the balances before the response arrives.
+
+Exchange uses the same process-local rates cache as `GET /api/v1/exchange/rates`.
+A prior rates request is optional: an empty or expired cache triggers a gRPC
+request. Rates are obtained before opening the database transaction. If refreshing
+rates fails, the exchange fails without changing balances; a fresh cache can
+serve an exchange while exchanger is unavailable.
+
+Both balance rows are locked in currency-code order. Insufficient funds or credit
+overflow aborts the transaction; a failure during credit rolls back the debit.
+There is no idempotency key: repeating a successful request performs another exchange.
+
+Exchange error responses use `{"error":"..."}`:
+
+| HTTP status | Message | When |
+|---|---|---|
+| 400 | `Invalid request body` | Malformed JSON, incompatible field types or multiple JSON values |
+| 400 | `Insufficient funds or invalid currencies` | Unsupported or identical currencies, invalid amount, insufficient funds, credit rounded to zero, or balance overflow |
+| 413 | `Request body too large` | Body exceeds 4096 bytes |
+| 500 | `Internal server error` | Rates unavailable or missing, a missing balance row, or an unexpected internal failure |
+
+Missing, invalid or expired JWTs receive `401` with an empty body.
+
+
+### Exchange rounding
+
+Currency exchange credits are rounded down to whole minor units after computing
+`amount * target_rate / source_rate`. Fractional minor units are discarded; a
+result below one minor unit is rejected. At unchanged rates, rounding cannot
+increase the balance through an exchange and its reverse. For example, with
+RUB=90.1 and EUR=0.87 per USD, 11213.82 RUB becomes 108.27 EUR; exchanging it
+back yields 11212.78 RUB.
+
 ## Error responses
 
-Wallet handler errors use `{"error":"..."}`:
+Deposit and withdrawal handler errors use `{"error":"..."}`:
 
 | HTTP status | Message | When |
 |---|---|---|
@@ -356,7 +416,7 @@ make integration-test
 ```
 
 Requires Go, Make, Docker Compose with `up --wait` support, and a running local
-Docker daemon. The target covers wallet, auth and exchanger repositories. The command uses `docker-compose.test.yaml`, selects an available
+Docker daemon. The target covers wallet balance, auth, currency exchange and exchanger repositories. The command uses `docker-compose.test.yaml`, selects an available
 local port, waits for database readiness, and runs the repository tests.
 Containers, network, and volumes are removed after success, failure, or interruption.
 Each PostgreSQL test applies its migrations in a separate schema and cleans it up afterward.
@@ -366,6 +426,11 @@ Coverage includes registration/login, bcrypt, JWT validation, authentication mid
 configuration, domain validation, exact decimal conversion and HTTP error responses.
 Exchange-rate tests cover client validation, RPC deadlines, handler responses,
 cache expiry and refresh failure, concurrent cache misses and cancellation.
+Exchange tests cover calculation and rounding down, absence of rounding gains on
+a round trip at unchanged rates, HTTP contracts, repository calls and errors.
+PostgreSQL tests check both exchange directions, returned balances and credited
+amount, user isolation, missing balances, full-balance exchange, rollback after a
+credit failure, and concurrent exchanges without overdrafts or overflow.
 Repository tests cover registration rollback, user/currency isolation, balance limits,
 concurrent deposits and withdrawals, and prevention of overdrafts and overflow.
 

@@ -55,7 +55,7 @@ integration-test:
 	$(TEST_COMPOSE) up --wait --wait-timeout 60; \
 	test_address=$$($(TEST_COMPOSE) port db 5432); \
 	TEST_DATABASE_URL="postgres://test_user:test_password@$$test_address/wallet_test?sslmode=disable" \
-		go test -count=1 -v ./$(WALLET_DIR)/internal/features/wallet/repository ./$(WALLET_DIR)/internal/features/auth/repository ./$(EXCHANGER_DIR)/internal/features/rates/repository
+		go test -count=1 -v ./$(WALLET_DIR)/internal/features/wallet/repository ./$(WALLET_DIR)/internal/features/auth/repository ./$(WALLET_DIR)/internal/features/exchange/repository ./$(EXCHANGER_DIR)/internal/features/rates/repository
 
 load-test-add-balance:
 	@test -n "$$TOKEN" || { echo "Set TOKEN to a JWT returned by login" >&2; exit 1; }

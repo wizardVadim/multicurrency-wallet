@@ -46,7 +46,7 @@ func TestGetExchangeRates(t *testing.T) {
 					return domain.ExchangeRates{}, fmt.Errorf("get rates: %w", providerErr)
 				}
 				return rates, nil
-			}))
+			}), nil)
 			got, err := svc.GetExchangeRates(ctx)
 			if calls != 1 {
 				t.Errorf("provider calls = %d; want 1", calls)
@@ -88,7 +88,7 @@ func TestGetExchangeRatesContextDone(t *testing.T) {
 			svc := service.New(ratesProviderStub(func(context.Context) (domain.ExchangeRates, error) {
 				t.Fatal("provider called with completed context")
 				return domain.ExchangeRates{}, nil
-			}))
+			}), nil)
 			got, err := svc.GetExchangeRates(ctx)
 			if !errors.Is(err, ctx.Err()) {
 				t.Errorf("error = %v; want %v", err, ctx.Err())

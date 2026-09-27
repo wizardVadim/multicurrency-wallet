@@ -32,7 +32,13 @@ var (
 
 var (
 	ErrInvalidExchangeRateValue = errors.New("invalid exchange rate value")
+	ErrSameExchangeCurrency     = errors.New("exchange currencies must differ")
 	ErrExchangeRatesNil         = errors.New("exchange rates is nil")
 	ErrInvalidBaseCurrencyRate  = errors.New("invalid base currency rate")
 	ErrBaseCurrencyNotConsists  = errors.New("base currency not consists")
+)
+
+var (
+	ErrExchangeRateNotFound = errors.New("exchange rate not found")
+	ErrCurrenciesAreSame    = errors.New("currencies are same")
 )

@@ -26,6 +26,7 @@ import (
 
 	exchange_cache "wallet-app/internal/features/exchange/cache"
 	exchange_client "wallet-app/internal/features/exchange/client"
+	exchange_repository "wallet-app/internal/features/exchange/repository"
 	exchange_service "wallet-app/internal/features/exchange/service"
 	exchange_http "wallet-app/internal/features/exchange/transport/http"
 
@@ -99,7 +100,7 @@ func RunWithConfig(config config.Config, logger *slog.Logger) error {
 
 	walletService := service.New(walletRepository)
 	authService := auth_service.New(authRepository, id.GenerateUUID, hasher, tokenGenerator)
-	exchangeService := exchange_service.New(ratesCache)
+	exchangeService := exchange_service.New(ratesCache, exchange_repository.NewPostgresRepository(pool))
 
 	exchangeHandler := exchange_http.New(exchangeService)
 	walletHandler := wallet_http.New(walletService)
@@ -108,6 +109,7 @@ func RunWithConfig(config config.Config, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /api/v1/exchange/rates", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(exchangeHandler.GetExchangeRates)))
+	mux.Handle("POST /api/v1/exchange", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(exchangeHandler.Exchange)))
 	mux.HandleFunc("POST /api/v1/register", authHandler.Register)
 	mux.HandleFunc("POST /api/v1/login", authHandler.Login)
 	mux.Handle("GET /api/v1/balance", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(walletHandler.GetBalances)))

@@ -1,4 +1,4 @@
-package http_test
+package exchange_http_test
 
 import (
 	"context"
@@ -9,11 +9,19 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"wallet-app/internal/core/domain"
 	exchangehttp "wallet-app/internal/features/exchange/transport/http"
 )
 
 type serviceStub func(context.Context) (domain.ExchangeRates, error)
+
+var _ exchangehttp.ExchangeService = serviceStub(nil)
+
+func (s serviceStub) Exchange(context.Context, uuid.UUID, domain.Currency, domain.Currency, int64) (domain.ExchangeResult, error) {
+	panic("unexpected Exchange call in exchange rates handler test")
+}
 
 func (s serviceStub) GetExchangeRates(ctx context.Context) (domain.ExchangeRates, error) {
 	return s(ctx)

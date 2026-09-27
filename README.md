@@ -10,8 +10,11 @@ Registration creates all three zero balances in the same database transaction as
 the user. Authenticated users can read, deposit into and withdraw from their own
 balances. Money is stored as integer minor units; the REST API uses decimal amounts.
 Wallet retrieves exchange rates from exchanger over gRPC and exposes them through
-an authenticated REST endpoint with an in-memory TTL cache. Currency exchange,
-Kafka, notifications and analytics are still planned.
+an authenticated REST endpoint with an in-memory TTL cache. Authenticated users
+can exchange currencies with atomic debit and credit in one database transaction.
+Credits are rounded down to whole minor units. See the
+[exchange API](services/gw-currency-wallet/README.md#exchange-currencies) for examples.
+Kafka, notifications, analytics and OpenAPI/Swagger documentation are still planned.
 
 ## Structure
 
@@ -83,7 +86,7 @@ to an empty data directory; editing credentials does not change an existing user
 | `make local-test-go` | Test both services and compile shared contracts |
 | `make test-wallet` | Run wallet tests |
 | `make test-exchanger` | Run exchanger tests |
-| `make integration-test` | Run wallet, auth and exchanger repository tests against temporary PostgreSQL |
+| `make integration-test` | Run wallet balance, auth, currency exchange and exchanger repository tests against temporary PostgreSQL |
 
 `docker-start` does not rebuild existing images after source changes; use
 `docker-rebuild`. For one application only, use `docker compose --env-file
@@ -138,6 +141,9 @@ Wallet tests cover authentication, exact decimal amounts, per-user balances,
 registration rollback, concurrent deposits/withdrawals and overflow protection.
 Exchange-rate tests cover the gRPC client, RPC deadlines, HTTP responses, cache
 expiry, refresh failures, concurrent cache misses and canceled contexts.
+Currency-exchange tests cover exact calculation, rounding down, reverse exchanges,
+HTTP requests and responses, returned balances, transaction rollback, missing
+balances, user isolation, concurrent exchanges, overdrafts and overflow.
 
 Wallet load-test targets are `load-test-add-balance`, `load-test-minus-balance`
 and `load-test-get-balance`. They require Vegeta and run for 30 seconds.
