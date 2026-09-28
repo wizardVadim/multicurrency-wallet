@@ -1,0 +1,599 @@
+openapi: 3.0.3
+
+info:
+  title: Currency Wallet API
+  version: 1.0.0
+  description: API для регистрации, управления балансами и обмена валют
+
+servers:
+  - url: http://localhost:8080
+    description: Локальный сервер для разработки и тестирования
+
+tags:
+  - name: Auth
+    description: Методы аутентификации и регистрации пользователей
+  - name: Wallet
+    description: Методы управления кошельками и балансами
+  - name: Exchange
+    description: Методы обмена валют и получения курсов
+
+paths:
+  /api/v1/register:
+    post:
+      tags:
+        - Auth
+      summary: Регистрация нового пользователя
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Пользователь успешно зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          description: Ошибка валидации данных
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Превышен лимит размера запроса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/login:
+    post:
+      tags:
+        - Auth
+      summary: Аутентификация пользователя
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Пользователь успешно аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Некорректное тело запроса — невалидный JSON, неверный тип поля или несколько JSON-значений
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: invalid request body
+        "401":
+          description: Неверное имя пользователя или пароль
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Invalid username or password
+        "413":
+          description: Тело запроса превышает 4096 байт
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: request body too large
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: internal server error
+  /api/v1/balance:
+    get:
+      tags:
+        - Wallet
+      summary: Получить балансы пользователя
+      operationId: getBalances
+      security:
+        - bearerAuth: []
+
+      responses:
+        "200":
+          description: Балансы пользователя успешно получены
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalancesResponse"
+              example:
+                balance:
+                  USD: 100.00
+                  EUR: 50.25
+                  RUB: 1000.00
+
+        "401":
+          description: JWT отсутствует, недействителен или просрочен
+
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: internal server error
+
+  /api/v1/wallet/deposit:
+    post:
+      tags:
+        - Wallet
+      summary: Пополнить баланс
+      operationId: depositBalance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BalanceOperationRequest"
+            example:
+              currency: USD
+              amount: 100.00
+      responses:
+        "200":
+          description: Баланс успешно пополнен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceOperationResponse"
+              example:
+                message: Account topped up successfully
+                new_balance:
+                  USD: 100.00
+                  EUR: 0.00
+                  RUB: 0.00
+        "400":
+          description: Некорректное тело запроса, сумма или валюта
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Invalid amount or currency
+        "401":
+          description: JWT отсутствует, недействителен или просрочен
+        "413":
+          description: Тело запроса превышает 4096 байт
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: request body too large
+        "422":
+          description: Пополнение приведёт к переполнению баланса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: balance overflow
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: internal server error
+
+  /api/v1/wallet/withdraw:
+    post:
+      tags:
+        - Wallet
+      summary: Списать средства с баланса
+      operationId: withdrawBalance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BalanceOperationRequest"
+            example:
+              currency: USD
+              amount: 25.50
+      responses:
+        "200":
+          description: Средства успешно списаны
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceOperationResponse"
+              example:
+                message: Withdrawal successful
+                new_balance:
+                  USD: 74.50
+                  EUR: 0.00
+                  RUB: 0.00
+        "400":
+          description: Некорректное тело запроса, валюта, сумма или недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Insufficient funds or invalid amount
+        "401":
+          description: JWT отсутствует, недействителен или просрочен
+        "413":
+          description: Тело запроса превышает 4096 байт
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: request body too large
+        "422":
+          description: Операция приведёт к переполнению баланса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: balance overflow
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: internal server error
+
+  /api/v1/exchange/rates:
+    get:
+      tags:
+        - Exchange
+      summary: Получить актуальные курсы валют
+      description: Курсы показывают количество единиц валюты за один USD.
+      operationId: getExchangeRates
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Курсы валют успешно получены
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeRatesResponse"
+              example:
+                rates:
+                  USD: 1
+                  RUB: 90.1
+                  EUR: 0.87
+        "401":
+          description: JWT отсутствует, недействителен или просрочен
+        "500":
+          description: Не удалось получить курсы валют
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Failed to retrieve exchange rates
+
+  /api/v1/exchange:
+    post:
+      tags:
+        - Exchange
+      summary: Обменять одну валюту на другую
+      description: Исходная и целевая валюты должны различаться. Полученная сумма округляется вниз до минимальной денежной единицы.
+      operationId: exchangeCurrency
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeRequest"
+            example:
+              from_currency: USD
+              to_currency: EUR
+              amount: 100.00
+      responses:
+        "200":
+          description: Обмен успешно выполнен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeResponse"
+              example:
+                message: Exchange successful
+                exchanged_amount: 87.00
+                new_balance:
+                  USD: 0.00
+                  EUR: 87.00
+        "400":
+          description: Некорректный запрос, валюта, сумма или недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Insufficient funds or invalid currencies
+        "401":
+          description: JWT отсутствует, недействителен или просрочен
+        "413":
+          description: Тело запроса превышает 4096 байт
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Request body too large
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Internal server error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT, полученный через POST /api/v1/login
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          description: Уникальное имя пользователя
+          example: IvanIvanov
+        email:
+          type: string
+          format: email
+          description: Уникальный email пользователя
+          example: ivan.ivanov@example.com
+        password:
+          type: string
+          format: password
+          description: Непустой пароль размером не более 72 байт
+          example: SecurePassword123
+
+    RegisterResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Сообщение о результате регистрации
+          example: User registered successfully
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Сообщение об ошибке
+          example: Invalid request body
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: Имя пользователя
+          example: IvanIvanov
+        password:
+          type: string
+          format: password
+          description: Непустой пароль размером не более 72 байт
+          example: SecurePassword123
+
+    LoginResponse:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: JWT для передачи в заголовке Authorization по схеме Bearer
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    BalancesResponse:
+      type: object
+      required:
+        - balance
+      properties:
+        balance:
+          type: object
+          description: Балансы по кодам валют
+          required:
+            - USD
+            - EUR
+            - RUB
+          properties:
+            USD:
+              type: number
+              format: double
+              minimum: 0
+              multipleOf: 0.01
+              example: 100.00
+            EUR:
+              type: number
+              format: double
+              minimum: 0
+              multipleOf: 0.01
+              example: 50.25
+            RUB:
+              type: number
+              format: double
+              minimum: 0
+              multipleOf: 0.01
+              example: 1000.00
+
+    BalanceOperationRequest:
+      type: object
+      required:
+        - currency
+        - amount
+      properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
+        amount:
+          $ref: "#/components/schemas/MoneyAmount"
+
+    BalanceOperationResponse:
+      type: object
+      required:
+        - message
+        - new_balance
+      properties:
+        message:
+          type: string
+          example: Account topped up successfully
+        new_balance:
+          $ref: "#/components/schemas/Balances"
+
+    ExchangeRatesResponse:
+      type: object
+      required:
+        - rates
+      properties:
+        rates:
+          type: object
+          required:
+            - USD
+            - EUR
+            - RUB
+          properties:
+            USD:
+              type: number
+              format: float
+              example: 1
+            EUR:
+              type: number
+              format: float
+              example: 0.87
+            RUB:
+              type: number
+              format: float
+              example: 90.1
+
+    ExchangeRequest:
+      type: object
+      required:
+        - from_currency
+        - to_currency
+        - amount
+      properties:
+        from_currency:
+          $ref: "#/components/schemas/Currency"
+        to_currency:
+          $ref: "#/components/schemas/Currency"
+        amount:
+          $ref: "#/components/schemas/MoneyAmount"
+
+    ExchangeResponse:
+      type: object
+      required:
+        - message
+        - exchanged_amount
+        - new_balance
+      properties:
+        message:
+          type: string
+          example: Exchange successful
+        exchanged_amount:
+          $ref: "#/components/schemas/MoneyAmount"
+        new_balance:
+          type: object
+          description: Балансы двух валют, участвовавших в обмене
+          additionalProperties:
+            type: number
+            format: double
+            minimum: 0
+            multipleOf: 0.01
+
+    Balances:
+      type: object
+      description: Балансы пользователя по поддерживаемым валютам
+      required:
+        - USD
+        - EUR
+        - RUB
+      properties:
+        USD:
+          type: number
+          format: double
+          minimum: 0
+          multipleOf: 0.01
+          example: 100.00
+        EUR:
+          type: number
+          format: double
+          minimum: 0
+          multipleOf: 0.01
+          example: 50.25
+        RUB:
+          type: number
+          format: double
+          minimum: 0
+          multipleOf: 0.01
+          example: 1000.00
+
+    Currency:
+      type: string
+      description: Код поддерживаемой валюты в верхнем регистре
+      enum:
+        - USD
+        - EUR
+        - RUB
+      example: USD
+
+    MoneyAmount:
+      type: number
+      format: double
+      description: Положительная сумма в основных денежных единицах, не более чем с двумя знаками после точки; экспоненциальная запись не поддерживается
+      minimum: 0.01
+      maximum: 92233720368547758.07
+      multipleOf: 0.01
+      example: 100.00
