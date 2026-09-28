@@ -30,6 +30,8 @@ import (
 	exchange_service "wallet-app/internal/features/exchange/service"
 	exchange_http "wallet-app/internal/features/exchange/transport/http"
 
+	docs "wallet-app/docs"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -107,6 +109,16 @@ func RunWithConfig(config config.Config, logger *slog.Logger) error {
 	authHandler := auth_http.New(authService)
 
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		w.Write(docs.OpenAPI)
+	})
+
+	mux.HandleFunc("GET /swagger/{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(docs.SwaggerHTML)
+	})
 
 	mux.Handle("GET /api/v1/exchange/rates", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(exchangeHandler.GetExchangeRates)))
 	mux.Handle("POST /api/v1/exchange", auth_http.Authenticate(tokenGenerator, http.HandlerFunc(exchangeHandler.Exchange)))

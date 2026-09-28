@@ -14,12 +14,18 @@ an authenticated REST endpoint with an in-memory TTL cache. Authenticated users
 can exchange currencies with atomic debit and credit in one database transaction.
 Credits are rounded down to whole minor units. See the
 [exchange API](services/gw-currency-wallet/README.md#exchange-currencies) for examples.
-Kafka, notifications, analytics and OpenAPI/Swagger documentation are still planned.
+The seven REST endpoints are described in the
+[OpenAPI 3.0.3 specification](services/gw-currency-wallet/docs/openapi.yaml).
+The application serves [Swagger UI](http://localhost:8080/swagger/) and the
+[specification](http://localhost:8080/openapi.yaml) without authentication.
+Swagger UI loads its JavaScript and CSS from a CDN, so the browser needs internet
+access. Kafka, notifications and analytics are still planned.
 
 ## Structure
 
 ```text
 services/gw-currency-wallet/  REST application, migrations and tests
+  docs/openapi.yaml          REST API specification (OpenAPI 3.0.3)
 services/gw-exchanger/        gRPC application, migrations and tests
 contracts/                   Protobuf definitions and generated Go code
 go.work                      Local workspace for all three Go modules

@@ -119,6 +119,27 @@ errors, and final balances. Increasing the pool size does not guarantee higher t
 when all updates target the same user and currency. `WRITE_TIMEOUT` controls response writes;
 it does not set a database query timeout.
 
+## OpenAPI and Swagger
+
+The [OpenAPI 3.0.3 specification](docs/openapi.yaml) describes all seven REST
+endpoints, request and response schemas, error statuses and JWT bearer authentication.
+The file is maintained manually; keep it in sync with HTTP handlers when the API changes.
+
+After starting the application, open [Swagger UI](http://localhost:8080/swagger/).
+The raw specification is available at [GET /openapi.yaml](http://localhost:8080/openapi.yaml).
+Both documentation routes are public; API authentication is unchanged. HTML and
+YAML are embedded in the Go binary, so edits require rebuilding and restarting the
+application. Swagger UI loads JavaScript and CSS from a CDN; the browser needs
+internet access.
+
+Use **Try it out** on registration and login, then copy the login token into
+**Authorize** without the `Bearer` prefix. Swagger UI adds the prefix to protected
+requests automatically.
+
+Its server URL is `http://localhost:8080`; adjust it in your client if using another
+host or published port. Protected operations require a JWT obtained from
+`POST /api/v1/login` and sent as `Authorization: Bearer <token>`.
+
 ## Authentication
 
 `POST /api/v1/register` and `POST /api/v1/login` are public. Wallet, exchange-rate and currency-exchange
@@ -284,7 +305,18 @@ update has succeeded.
 Amounts are JSON numbers in major units; both currencies must be supported and
 different. The debit must be positive and have at most two decimal places.
 
-For a user with 100.00 USD and 0.00 EUR, using the seeded EUR rate of 0.87:
+This example starts with 100.00 USD and 0.00 EUR and uses the seeded EUR rate of
+0.87. If following the deposit and withdrawal examples above, first deposit another
+25.50 USD to bring the remaining 74.50 USD back to 100.00 USD:
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/wallet/deposit \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"currency":"USD","amount":25.50}'
+```
+
+Then exchange the 100.00 USD:
 
 ```bash
 curl -i -X POST http://localhost:8080/api/v1/exchange \
