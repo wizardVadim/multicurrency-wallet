@@ -42,3 +42,7 @@ var (
 	ErrExchangeRateNotFound = errors.New("exchange rate not found")
 	ErrCurrenciesAreSame    = errors.New("currencies are same")
 )
+
+var (
+	ErrInvalidAmountMinor = errors.New("invalid amount minor")
+)

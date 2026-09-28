@@ -70,7 +70,7 @@ func TestGetBalances(t *testing.T) {
 				}
 				return tt.balances, tt.err
 			}}
-			got, err := service.New(repo).GetBalances(ctx, id)
+			got, err := service.New(repo, nil).GetBalances(ctx, id)
 			if !errors.Is(err, tt.err) {
 				t.Errorf("error = %v; want %v", err, tt.err)
 			}
@@ -141,7 +141,7 @@ func TestApplyBalanceOperation(t *testing.T) {
 				}
 				return []domain.Balance{balance}, nil
 			}}
-			got, err := service.New(repo).ApplyBalanceOperation(ctx, op)
+			got, err := service.New(repo, nil).ApplyBalanceOperation(ctx, op)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("error=%v; want %v", err, tt.wantErr)
 			}
@@ -162,5 +162,95 @@ func TestApplyBalanceOperation(t *testing.T) {
 				t.Errorf("calls=%d/%d; want %d/%d", applyCalls, readCalls, wantApply, wantRead)
 			}
 		})
+	}
+}
+
+type ratesProviderStub func(context.Context) (domain.ExchangeRates, error)
+
+func (f ratesProviderStub) GetExchangeRates(ctx context.Context) (domain.ExchangeRates, error) {
+	return f(ctx)
+}
+
+func TestBalanceOperationRatesPolicy(t *testing.T) {
+	upstreamErr := errors.New("exchanger unavailable")
+	usd, err := domain.NewCurrency(domain.CurrencyTypeUSD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operationType := range []domain.OperationType{domain.OperationTypeDeposit, domain.OperationTypeWithdraw} {
+		for _, currencyType := range []domain.CurrencyType{domain.CurrencyTypeUSD, domain.CurrencyTypeEUR, domain.CurrencyTypeRUB} {
+			for _, scenario := range []string{"success", "provider_error", "missing_rate", "canceled"} {
+				t.Run(string(operationType)+"/"+string(currencyType)+"/"+scenario, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					if scenario == "canceled" {
+						cancel()
+					}
+					currency, err := domain.NewCurrency(currencyType)
+					if err != nil {
+						t.Fatal(err)
+					}
+					op, err := domain.NewBalanceOperation(uuid.New(), currency, operationType, 100000)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var calls []string
+					provider := ratesProviderStub(func(c context.Context) (domain.ExchangeRates, error) {
+						calls = append(calls, "rates")
+						if c != ctx {
+							t.Error("provider received different context")
+						}
+						if scenario == "provider_error" {
+							return domain.ExchangeRates{}, upstreamErr
+						}
+						rates := domain.Rates{domain.CurrencyTypeUSD: 1}
+						if scenario != "missing_rate" {
+							rates[domain.CurrencyTypeEUR] = 0.87
+							rates[domain.CurrencyTypeRUB] = 90.1
+						}
+						return domain.NewExchangeRates(usd, rates)
+					})
+					repo := &repositoryStub{t: t,
+						applyBalanceOp: func(c context.Context, got domain.BalanceOperation) error {
+							calls = append(calls, "apply")
+							if c != ctx || got != op {
+								t.Error("incorrect mutation arguments")
+							}
+							return nil
+						},
+						balances: func(c context.Context, id uuid.UUID) ([]domain.Balance, error) {
+							calls = append(calls, "balances")
+							if c != ctx || id != op.UserID() {
+								t.Error("incorrect read arguments")
+							}
+							return nil, nil
+						},
+					}
+					_, err = service.New(repo, provider).ApplyBalanceOperation(ctx, op)
+					var wantErr error
+					var wantCalls []string
+					switch {
+					case scenario == "canceled":
+						wantErr = context.Canceled
+					case currencyType == domain.CurrencyTypeUSD:
+						wantCalls = []string{"apply", "balances"}
+					case scenario == "provider_error":
+						wantErr = upstreamErr
+						wantCalls = []string{"rates"}
+					case scenario == "missing_rate":
+						wantErr = domain.ErrExchangeRateNotFound
+						wantCalls = []string{"rates"}
+					default:
+						wantCalls = []string{"rates", "apply", "balances"}
+					}
+					if !errors.Is(err, wantErr) {
+						t.Errorf("error = %v; want %v", err, wantErr)
+					}
+					if !reflect.DeepEqual(calls, wantCalls) {
+						t.Errorf("calls = %v; want %v", calls, wantCalls)
+					}
+				})
+			}
+		}
 	}
 }

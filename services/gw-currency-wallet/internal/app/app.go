@@ -100,7 +100,7 @@ func RunWithConfig(config config.Config, logger *slog.Logger) error {
 		time.Duration(config.ExchangeRatesCacheTTL)*time.Second,
 	)
 
-	walletService := service.New(walletRepository)
+	walletService := service.New(walletRepository, ratesCache)
 	authService := auth_service.New(authRepository, id.GenerateUUID, hasher, tokenGenerator)
 	exchangeService := exchange_service.New(ratesCache, exchange_repository.NewPostgresRepository(pool))
 

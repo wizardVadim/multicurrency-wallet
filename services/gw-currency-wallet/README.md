@@ -245,6 +245,12 @@ be positive, have at most two fractional digits, and fit into `int64` minor unit
 Scientific notation such as `1e2` is rejected. The maximum amount or balance is
 `92233720368547758.07` major units. Balances cannot be negative.
 No currency conversion is performed by deposit or withdraw.
+For EUR/RUB, both operations now require a rate from the shared cache or exchanger
+before changing the balance, in preparation for classifying large operations.
+If the cache is empty or expired and fetching rates fails, or the currency rate
+is missing, the operation returns 500 without changing the balance. USD uses a
+fixed rate of 1 and does not call the rates provider. Event publication is not
+implemented yet.
 
 ### Read balances
 
